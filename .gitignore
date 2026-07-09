@@ -1,0 +1,11 @@
+# Obsidian 配置(本地工作区设置,不提交)
+.obsidian/
+
+# 源书 PDF(版权 + 体积,不提交)
+*.pdf
+
+# macOS / 编辑器杂项
+.DS_Store
+*.swp
+.idea/
+.vscode/
