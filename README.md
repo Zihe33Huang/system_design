@@ -423,9 +423,9 @@ graph TB
 - [x] A-Ch3: 非关系型存储 → [aws_03](SDA/aws_03-非关系型数据库.md)
 - [x] A-Ch4: 缓存策略 → [aws_04](SDA/aws_04-缓存策略与机制.md)
 - [x] A-Ch5: 负载均衡 → [aws_05](SDA/aws_05-负载均衡.md)
-- [ ] A-Ch6: 通信网络与协议
-- [ ] A-Ch7: 容器/K8s/部署
-- [ ] A-Ch8: 架构模式
+- [x] A-Ch6: 通信网络与协议 → [aws_06](SDA/aws_06-通信网络与协议.md)
+- [x] A-Ch7: 容器/K8s/部署 → [aws_07](SDA/aws_07-容器化编排与部署.md)
+- [x] A-Ch8: 架构模式 → [aws_08](SDA/aws_08-架构设计与模式.md)
 
 **Part II · AWS 服务深挖**
 - [ ] A-Ch9: AWS 网络
