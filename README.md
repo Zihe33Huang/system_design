@@ -257,8 +257,8 @@ graph TB
     style A6 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style A7 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style A8 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
-    style B1 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
-    style B2 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style B1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style B2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style B3 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style B4 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style B5 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
@@ -428,8 +428,8 @@ graph TB
 - [x] A-Ch8: 架构模式 → [aws_08](SDA/aws_08-架构设计与模式.md)
 
 **Part II · AWS 服务深挖**
-- [ ] A-Ch9: AWS 网络
-- [ ] A-Ch10: AWS 存储
+- [x] A-Ch9: AWS 网络 → [aws_09](SDA/aws_09-AWS网络服务.md)
+- [x] A-Ch10: AWS 存储 → [aws_10](SDA/aws_10-AWS存储服务.md)
 - [ ] A-Ch11: AWS 计算
 - [ ] A-Ch12: AWS 消息/编排/监控/IAM
 - [ ] A-Ch13: AWS 大数据/ML
