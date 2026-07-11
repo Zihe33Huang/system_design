@@ -7,5 +7,7 @@
 # macOS / 编辑器杂项
 .DS_Store
 *.swp
+*.bak
+*.bak.*
 .idea/
 .vscode/
