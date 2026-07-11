@@ -1274,3 +1274,376 @@ flowchart LR
 12. **原书停在 2020**——补 AV1/per-title/CMAF/LL-HLS/短视频/GPU 转码/HTTP3/ContentID/推荐 funnel,才能拿 strong hire。
 
 > 🔗 **连接上下章**:**Ch14 YouTube** 的"**分块上传 + 断点续传 + pre-signed URL**"在 **Ch15 Google Drive** 会更深入——Drive 把"块级同步、版本、协作冲突"做到极致,上传协议是同一套但冲突解决是另一套题。从"视频流处理"转向"文件同步与协作"。
+
+
+---
+
+## ☁️ AWS 实现(Day 0 → 扩展 → Day N)⭐⭐⭐⭐⭐
+
+> 📖 **引文(信源)**:本节落地视角取自 **AWS 书 Part III / Ch20 *Designing a Video-Processing Pipeline for a Streaming Service***——把本章前面设计的视频平台(上传 → 转码 DAG → CDN 分发 → 自适应码率播放)整体搬上 AWS。**核心一条主链:`S3 原始桶 → MediaConvert / ECS 转码 → S3 输出桶 → CloudFront 分发`**,元数据落 DynamoDB,事件链路用 EventBridge + Step Functions 串起来。Part II 服务交叉引用:**aws_09 CloudFront**(CDN + Origin Shield)、**aws_10 S3**(原始/输出桶 + 存储分级)、**aws_11 ECS/EC2**(自建 FFmpeg 转码 + Spot)、**aws_12 SQS/Kinesis/MediaConvert**(任务削峰 + 托管转码)。
+
+> 💡 **为什么单独成节**:前 13 节讲的是"**怎么设计**"(编码阶梯、DAG、长尾优化、AV1…),这一节讲"**怎么落地**"——同一套设计,在 AWS 上 Day 0 用全托管快速上线、扩展阶段权衡托管 vs 自建、Day N 上多 Region + 直播 + DRM + AI 审核。**面试被追问"部署在 AWS 怎么做"时,这节就是答案**。
+
+### 🗺️ AWS 架构总览
+
+```mermaid
+flowchart LR
+    UP["客户端<br/>(上传)"] -->|"① pre-signed URL<br/>直传绕过 API"| S3O[("S3 原始桶<br/>source")]
+    S3O -->|"② ObjectCreated<br/>事件"| EB["EventBridge"]
+    EB -->|"③ 触发"| SF["Step Functions<br/>(编排)"]
+    SF -->|"④ 调起"| MC["MediaConvert<br/>或 ECS+FFmpeg<br/>(转码)"]
+    MC -->|"⑤ 多码率 HLS/DASH<br/>输出"| S3T[("S3 输出桶<br/>transcoded")]
+    S3T -->|"⑥ 回源"| CF[("CloudFront<br/>CDN")]
+    CF -->|"⑦ 边缘分发"| VIEW["观众"]
+    SF -->|"⑧ 元数据"| DDB[("DynamoDB<br/>视频元数据")]
+    SF -->|"⑨ 缩略图"| LAMBDA["Lambda<br/>+ FFmpeg"]
+    LAMBDA --> S3T
+
+    style UP fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style S3O fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style EB fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style SF fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style MC fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style S3T fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style CF fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style VIEW fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style DDB fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style LAMBDA fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+```
+
+**主链 9 步**(背):① 客户端拿 pre-signed URL **直传 S3 原始桶**(绕开 API,大文件不经服务端)→ ② S3 `ObjectCreated` 事件被 **EventBridge** 捕获 → ③ EventBridge 触发 **Step Functions** 状态机 → ④ Step Functions 调起转码(**MediaConvert 托管** 或 **ECS+FFmpeg 自建**)→ ⑤ 转码产出多码率 HLS/DASH 分片写入 **S3 输出桶** → ⑥ CloudFront 以输出桶为 origin 回源 → ⑦ 边缘节点就近分发给观众 → ⑧ 元数据(URL/分辨率/状态)落 **DynamoDB** → ⑨ 缩略图由 **Lambda + FFmpeg** 抽帧生成。
+
+> 💡 **对应本章前 6 节的设计**:S3 原始桶 = 第 3 节"原始存储 blob";转码 = 第 4-5 节"编码阶梯 + DAG"(AWS 书把 DAG 直接交给 Step Functions);S3 输出桶 = "转码后存储";CloudFront = "CDN";DynamoDB = "元数据 DB"。**设计一字未改,只是把抽象组件换成了 AWS 服务名**。
+
+### Day 0 MVP:全托管,几小时上线
+
+Day 0 的目标是**用全托管服务快速跑通主链**,不碰运维。AWS 书原话:"start with fully managed services to launch quickly"。
+
+```mermaid
+flowchart LR
+    C["客户端"] -->|"GET pre-signed"| API["API Gateway<br/>+ Lambda"]
+    API -->|"签 URL"| S3O[("S3 原始桶")]
+    C -->|"PUT 直传"| S3O
+    S3O -->|"S3 事件"| L1["Lambda 触发器"]
+    L1 -->|"提交 Job"| MC["MediaConvert<br/>(托管转码)"]
+    MC -->|"HLS/DASH<br/>多码率"| S3T[("S3 输出桶")]
+    S3T --> CF[("CloudFront")]
+    CF --> V["观众"]
+    MC -->|"完成回调"| L2["Lambda<br/>写元数据"]
+    L2 --> DDB[("DynamoDB")]
+
+    style C fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style API fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style S3O fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style L1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style MC fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style S3T fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style CF fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style V fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style L2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style DDB fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+```
+
+**Day 0 选型理由**(背):
+
+| 选项 | 为什么 Day 0 选它 |
+|------|----------------|
+| **客户端直传 S3(pre-signed URL)** | 大文件绕开 API server,带宽不经过业务后端。对应本章 7.4 节 |
+| **S3 事件 → Lambda → MediaConvert** | 全托管事件驱动,无需自己跑轮询。Lambda 按调用计费,Day 0 量小几乎免费 |
+| **AWS Elemental MediaConvert** | 托管转码,提交 Job 即出多分辨率 HLS/DASH,**不用维护 FFmpeg 集群**。对应第 4 节编码阶梯 |
+| **S3 输出桶 + CloudFront** | 输出桶做 origin,CloudFront 一键启用 CDN。对应第 6 节流媒体 |
+| **DynamoDB 存元数据** | NoSQL,毫秒级读写,托管扩缩。对应第 3 节元数据 DB |
+
+> 📝 **AWS Elemental MediaConvert**:AWS 的专业文件转码服务(基于 Elemental 技术,亚马逊 2015 收购)。提交一个 Job(JSON 描述输入 + 输出组),它自动跑出**多分辨率 × 多码率的 HLS/DASH 自适应码率包**——**正好对应本章第 4.2 节的"编码阶梯"**。按转码时长(分钟)× 输出分辨率档次计费。
+
+**示例 1:签发 pre-signed URL(客户端直传 S3)**
+
+```python
+import boto3
+from datetime import datetime, timedelta
+
+s3 = boto3.client("s3")
+
+def get_upload_url(bucket, key, expires=3600):
+    """签发 pre-signed PUT URL, 客户端拿它直传 S3, 不经 API server"""
+    return s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": bucket, "Key": key},
+        ExpiresIn=expires,                       # 时效(秒), 过期作废
+        HttpMethod="PUT",
+    )
+
+# 客户端: requests.put(get_upload_url(...), data=video_bytes)
+# 上传完成后, S3 ObjectCreated 事件自动触发后续转码链路
+```
+
+**示例 2:提交 MediaConvert 转码 Job(生成多码率 HLS)**
+
+```python
+import boto3
+
+mc = boto3.client("mediaconvert", region_name="us-east-1")
+ENDPOINT = "https://abc123.mediaconvert.us-east-1.amazonaws.com"   # 账户专属 endpoint
+
+def submit_transcode_job(src_s3, out_s3):
+    """提交转码 Job: 一个源视频 → 多码率 HLS 自适应码率包"""
+    job = {
+        "Role": "arn:aws:iam::111122223333:role/MediaConvertRole",
+        "Settings": {
+            "Inputs": [{"FileInput": src_s3}],                          # s3://source/raw.mov
+            "OutputGroups": [{
+                "Name": "HLS_GROUP",
+                "OutputGroupSettings": {
+                    "Type": "HLS_GROUP_SETTINGS",
+                    "HlsGroupSettings": {
+                        "Destination": out_s3,                          # s3://out/hls/
+                        "SegmentLength": 10,                            # 每分片 10 秒(对应 HLS manifest)
+                    },
+                },
+                "Outputs": [
+                    # 编码阶梯: 1080p / 720p / 480p / 360p(对应本章表 4.2)
+                    {"VideoDescription": {"Width":1920,"Height":1080,
+                        "CodecSettings":{"Codec":"H_264","H264Settings":{"Bitrate":5000000}}},
+                     "ContainerSettings":{"Container":"M3U8","M3u8Settings":{}}},
+                    {"VideoDescription": {"Width":1280,"Height":720,
+                        "CodecSettings":{"Codec":"H_264","H264Settings":{"Bitrate":2500000}}},
+                     "ContainerSettings":{"Container":"M3U8","M3u8Settings":{}}},
+                    {"VideoDescription": {"Width":640,"Height":480,
+                        "CodecSettings":{"Codec":"H_264","H264Settings":{"Bitrate":1000000}}},
+                     "ContainerSettings":{"Container":"M3U8","M3u8Settings":{}}},
+                ],
+            }],
+        },
+    }
+    return mc.create_job(**job)["Job"]["Id"]
+```
+
+> 💡 **Day 0 的取舍**:全托管 = **省心但贵且不可控**。MediaConvert 按分钟计费,量大了成本失控;转码参数、分块策略都被 AWS 锁定。所以 Day 0 用来快速验证,一旦上量就要切到扩展方案(自建转码)。
+
+### 扩展(单 Region):托管 vs 自建,削峰与预热
+
+Day 0 跑通后,流量上来就要扩展。AWS 书原话:"MediaConvert is a great solution to start with, but you're dependent on AWS for encoding decisions. Keeping this in-house helps you fully control the implementation logic." —— **这就是托管 vs 自建的权衡**。
+
+```mermaid
+flowchart LR
+    SRC["S3 原始桶"] -->|"上传完成"| SQS[("SQS<br/>转码任务队列<br/>削峰")]
+    SQS -->|"拉任务"| ECS["ECS + FFmpeg<br/>自建转码集群<br/>(EC2 Spot 省钱)"]
+    SQS -->|"或拉任务"| MC["MediaConvert<br/>(托管, 省心)"]
+    ECS --> S3T[("S3 输出桶")]
+    MC --> S3T
+    S3T -->|"热度信号"| PRE["CloudFront<br/>预热(热门视频)"]
+    S3T --> CF[("CloudFront<br/>Origin Shield")]
+    CF --> V["观众"]
+    META["元数据"] --> DDB[("DynamoDB<br/>GlobalSecondaryIndex")]
+
+    style SRC fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style SQS fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style ECS fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style MC fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style S3T fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style PRE fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style CF fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style V fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style META fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style DDB fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+```
+
+**扩展阶段四件事**(背):
+
+| 维度 | 做法 | 对应 AWS 服务 |
+|------|------|--------------|
+| **转码削峰** | 上传流量尖刺时,**任务先进 SQS 排队**,转码 worker 按自身速率消费,**保护转码集群不被打爆**。对应本章 7.3 节 MQ 解耦 | **SQS**(aws_12) |
+| **转码自建** | 量大后切 **ECS/EC2 + FFmpeg + Spot 实例** 自建转码农场——**完全可控编码策略(per-title / AV1 / 分块)**,Spot 省 70% 成本 | **ECS + EC2 Spot**(aws_11) |
+| **热门预热** | 新爆款视频上传后,**主动推到 CloudFront 缓存**(避免第一个观众冷回源慢)。对应本章 7.6 节热片优先 | **CloudFront invalidation /预热 API**(aws_09) |
+| **缩略图** | 视频转码完成,**Lambda + FFmpeg** 抽关键帧生成缩略图,写回 S3。无服务器,按调用计费 | **Lambda**(aws_12) |
+
+> 🪤 **追问陷阱**:"什么时候从 MediaConvert 切自建?" → "三条信号:① **成本**(MediaConvert 按分钟计费,量大比 EC2 Spot 贵 3-5 倍);② **可控性**(要做 per-title encoding / AV1 / 自定义分块策略,MediaConvert 参数受限);③ **规模**(日处理数千小时视频后,自建 ROI 显现)。**AWS 书原话就是:托管 start,自建 scale**。但自建要维护 FFmpeg 集群、Spot 中断恢复、DAG 调度器(接本章第 5 节),运维成本不低。"
+
+> 💡 **Origin Shield**:CloudFront 的"二级缓存"——在源站(S3 输出桶)前再加一层缓存,**提升命中率 + 减轻源站负载**。AWS 书专门提了这个特性。多个边缘节点 miss 时只回源到 Origin Shield 一次,Origin Shield 再回源 S3。
+
+### Day 0 → Day N 对照表
+
+把本章前 13 节的设计组件,一一对应到 AWS 服务:
+
+```mermaid
+flowchart LR
+    SDE["本章设计组件"] -->|"映射"| AWS["AWS 服务"]
+
+    SDE --> D1["原始/输出存储(blob)"]
+    SDE --> D2["转码 DAG(预处理+调度+worker)"]
+    SDE --> D3["CDN 分发"]
+    SDE --> D4["自适应码率(HLS/DASH)"]
+    SDE --> D5["元数据 DB(分片+副本)"]
+    SDE --> D6["完成队列(MQ)"]
+    SDE --> D7["分块上传 + pre-signed URL"]
+    SDE --> D8["缩略图生成"]
+    SDE --> D9["弹幕/评论(实时)"]
+
+    AWS --> A1["S3(原始桶+输出桶)"]
+    AWS --> A2["MediaConvert 或 ECS+FFmpeg + Step Functions"]
+    AWS --> A3["CloudFront(+Origin Shield)"]
+    AWS --> A4["MediaConvert 输出 HLS/DASH 包"]
+    AWS --> A5["DynamoDB(+GS2 索引)"]
+    AWS --> A6["SQS(削峰)"]
+    AWS --> A7["S3 pre-signed URL + multipart"]
+    AWS --> A8["Lambda + FFmpeg(无服务器)"]
+    AWS --> A9["Kinesis Data Streams + DynamoDB"]
+
+    style SDE fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style AWS fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style D1 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D2 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D3 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D4 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D5 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D6 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D7 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D8 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style D9 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style A1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A3 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A4 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A5 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A6 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A7 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A8 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style A9 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+```
+
+| 本章设计组件 | AWS 服务 | 落地要点 |
+|------------|---------|---------|
+| 原始/输出 blob 存储 | **S3**(原始桶 + 输出桶) | 桶分离便于权限/生命周期;存原始 4K 单文件几十 GB 没问题 |
+| 转码 DAG(预处理+调度+worker) | **Step Functions + (MediaConvert 或 ECS+FFmpeg)** | Step Functions 天然 DAG,每步幂等可重试;worker 池用 ECS |
+| CDN 分发 | **CloudFront + Origin Shield** | Origin Shield 提升命中率;边缘节点全球覆盖 |
+| 自适应码率(HLS/DASH) | **MediaConvert 输出 HLS/DASH 包** | 一个 Job 出多码率 manifest,客户端 ABR 自适应 |
+| 元数据 DB | **DynamoDB + GlobalSecondaryIndex** | NoSQL,按 user_id / video_id 建索引;按需扩容 |
+| 完成队列(MQ) | **SQS**(标准队列削峰) | 解耦转码完成与元数据更新;自动重试 |
+| 分块上传 + pre-signed URL | **S3 multipart upload + pre-signed URL** | 对应本章 7.1/7.4;按 GOP 对齐切 chunk |
+| 缩略图生成 | **Lambda + FFmpeg** | 事件触发,无服务器,按调用计费 |
+| 弹幕/评论(实时) | **Kinesis Data Streams + DynamoDB** | 弹幕是高频实时数据流,Kinesis 写入 + Lambda 落库 |
+| 编排(端到端) | **Step Functions** | AWS 书 Day N 首选;每步 stateless + idempotent |
+
+### Day N 生产级:多 Region + 直播 + DRM + AI
+
+AWS 书 Day N 架构把所有微服务部署到 **EKS(Kubernetes)**,Pod 跨 AZ 自动扩缩。除此之外,Day N 还要解决四个 Day 0 没碰的问题:**多 Region、直播、DRM、视频 AI**。
+
+```mermaid
+flowchart LR
+    subgraph GLOBAL["Day N 全球生产级"]
+        direction LR
+        SRC2["S3 原始桶<br/>(跨 Region 复制)"] --> MC2["EKS 集群<br/>转码微服务<br/>(跨 AZ 自愈)"]
+        MC2 --> S3T2[("S3 输出桶<br/>(多 Region 副本)")]
+        S3T2 --> MP["MediaPackage<br/>(DRM + 打包)"]
+        MP --> CF2[("CloudFront<br/>全球边缘<br/>+ 嵌入式 PoP")]
+        CF2 --> V2["全球观众"]
+    end
+
+    LIVE["直播源<br/>(摄像机/RTMP)"] --> ML["MediaLive<br/>(实时编码)"]
+    ML --> MP
+    ML --> KV["Kinesis Video Streams<br/>(AI 输入)"]
+    KV --> REK["Rekognition<br/>(内容审核/标签)"]
+
+    DRM["DRM 密钥<br/>Widevine/PlayReady/FairPlay"] -.->|"授权"| MP
+
+    style GLOBAL fill:#FFF8E1,stroke:#F9A825,color:#1f1f1f
+    style SRC2 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style MC2 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style S3T2 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style MP fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style CF2 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style V2 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style LIVE fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style ML fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style KV fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style REK fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style DRM fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+```
+
+| Day N 能力 | 落地 | AWS 服务 |
+|-----------|------|---------|
+| **多 Region S3 复制** | 原始桶跨 Region 异步复制,**就近上传 + 全球容灾**。观众就近读输出桶,跨区带宽费省一半 | **S3 Cross-Region Replication**(aws_10) |
+| **CloudFront 全球 + 嵌入式 PoP** | AWS 书提到 CloudFront 推出 **embedded PoPs**(直接部署到 ISP 机房,128TB/台,70Gbps),**对标 Netflix Open Connect** | **CloudFront**(aws_09) |
+| **直播:实时编码** | **MediaLive** 在源端实时编码压缩(对应本章第 10 节 LL-HLS);**Direct Connect** 专用线路避开公网拥塞。Amazon Prime 周四橄榄球赛延迟 <10 秒 | **MediaLive + Direct Connect** |
+| **DRM 数字版权** | **MediaPackage** 负责内容保护(Widevine/PlayReady/FairPlay 三大 DRM)+ manifest 生成 + HLS/DASH 设备适配 | **MediaPackage** |
+| **视频 AI 审核/标签** | 视频流过 **Kinesis Video Streams** → **Rekognition** 自动识别暴力/色情/违规 + 打场景标签,对应本章 12.3 节 ContentID 之外的 AI 审核 | **Kinesis Video + Rekognition** |
+| **A/B 转码策略** | 同一视频用不同编码参数出两版,**A/B 测哪种码率/编码组合 VMAF 更高、带宽更省**;对应本章 9.2 节 per-title encoding 的工程化 | **MediaConvert + Step Functions** |
+| **直播低延迟分发** | MediaLive → MediaPackage → CloudFront 全链路 LL-HLS,延迟 2-5 秒,千万级并发 | **MediaLive + MediaPackage + CloudFront** |
+| **分布式追踪** | 转码链路跨多微服务,**AWS X-Ray** 追踪请求,排障定位到具体哪一步失败 | **X-Ray** |
+
+> 💡 **AWS 书对 Netflix 的引用**:Netflix 自建 **Open Connect Appliance(OCA)** 把内容推到 ISP 机房(对应本章 7.6 节自建 CDN);业务后端跑 AWS(EC2/S3/DynamoDB);转码用自研 Conductor/Maestro 编排(对应本章第 5 节 DAG)。**AWS 书建议:中小公司用 CloudFront,规模到 Tbps 级才考虑自建 CDN**。
+
+> 🪤 **追问陷阱**:"Day N 为什么用 EKS 而不是 Lambda?" → "视频转码是**长时计算密集任务**(单视频转码几分钟到几小时),Lambda 最长 15 分钟超时,且重状态(FFmpeg 进程、临时文件)不适合无服务器。**EKS + Spot 实例**是转码农场的标配——容器化 FFmpeg worker,跨 AZ 自愈,Spot 中断自动迁移。Lambda 只用在轻量任务(缩略图、元数据更新、事件路由)。"
+
+### 💰 成本与性能(本题核心,接本章第 1.2 节)
+
+AWS 书强调"the most important parameter for scaling is execution time and cost"。视频平台的成本结构特殊:**转码是最大计算成本,CDN 出口流量是最大带宽成本,存储是长期累积成本**——三者都要分别优化。
+
+```mermaid
+flowchart LR
+    COST["视频平台成本结构"] --> T["① 转码成本<br/>(计算密集, 最大计算开销)"]
+    COST --> C["② CDN 出口流量<br/>(带宽大头)"]
+    COST --> S["③ S3 长期存储<br/>(累积成本)"]
+
+    T --> T1["MediaConvert 按分钟计费<br/>vs EC2 Spot 自建省 70%"]
+    C --> C1["CloudFront 按出口 GB 计费<br/>长尾优化 + 自建 CDN 省最多"]
+    S --> S1["S3 分级: 热→Standard<br/>温→Infrequent Access<br/>冷→Glacier"]
+
+    style COST fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style T fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style C fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style S fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style T1 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style C1 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style S1 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+```
+
+| 成本类型 | 量级 | 优化手段 | AWS 服务 |
+|---------|------|---------|---------|
+| **转码计算** | 日处理数千小时视频,MediaConvert $0.012-0.024/分钟 | 量大切 **EC2 Spot + FFmpeg** 省 70%;**AV1 只给热片**(对应本章 13.1 节);per-title 省码率 | MediaConvert / EC2 Spot(aws_11/12) |
+| **CDN 出口流量** | **本题最大头**(本章估 $15万/天) | 长尾优化(冷片走源站);CloudFront 流量包预购;规模够大自建(embedded PoPs) | CloudFront(aws_09) |
+| **S3 长期存储** | 55 PB/年累积 | **S3 生命周期策略**:热视频 Standard,温转 S3 Standard-IA,冷门转 Glacier 归档,冷数据省 80% | **S3 存储分级**(aws_10) |
+| **Step Functions 编排** | 按状态转换次数计费 | AWS 书警告:量大了状态转换费累积,可切自建编排(Netflix Conductor) | Step Functions(aws_12) |
+
+> 💡 **S3 存储分级(对应 aws_10)**:本章第 7.6 节讲"长尾分布"——大量冷门视频几乎无人看,却长期占存储。S3 解决方案:**Lifecycle 规则**自动把 N 天没访问的对象从 Standard 迁到 **Infrequent Access**(便宜 40%)再到 **Glacier**(便宜 80% 但取回要分钟到小时)。**冷视频归档 Glacier 是 S3 账单的大救星**。
+
+> 🪤 **追问陷阱**:"视频平台最该优化哪一项成本?" → "**CDN 出口流量**——它通常是总成本的 60-80%,远超存储和计算。其次是转码计算。优化顺序:① 长尾(冷片走源站)② AV1/per-title 砍码率 ③ S3 分级归档冷视频 ④ 量大自建 CDN。这个顺序也是 ROI 从高到低的顺序。"
+
+### 🆕 2026 增量(AWS 服务的新东西)
+
+AWS 书 2023 出版,几处停在 2022。2026 在视频管线场景有几个值得讲的增量:
+
+```mermaid
+flowchart LR
+    OLD["AWS 书(2023)<br/>停在 2022 视频栈"] -->|"2026"| NEW["视频管线新栈 ⭐"]
+
+    NEW --> N1["S3 Express One Zone<br/>(热视频元数据毫秒级)"]
+    NEW --> N2["MediaConvert AV1/HEVC<br/>(托管新编码)"]
+    NEW --> N3["CloudFront LL-HLS<br/>(实时直播)"]
+    NEW --> N4["Graviton(ARM)转码<br/>(省成本)"]
+    NEW --> N5["Bedrock 视频内容理解<br/>(自动字幕/摘要/标签)"]
+
+    style OLD fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style NEW fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style N1 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style N2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style N3 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style N4 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style N5 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+```
+
+| 2026 增量 | 解决什么 | 替代/补充了什么 |
+|----------|---------|----------------|
+| **S3 Express One Zone** | 单 AZ 极低延迟对象存储(10x 普通 S3),**热视频元数据 / 频繁访问的分片索引**毫秒级返回 | 补 Standard S3 在低延迟场景的不足(aws_10) |
+| **MediaConvert AV1 / HEVC 托管** | 2024 起 MediaConvert 原生支持 AV1 / HEVC 输出,**不用自建也能上 AV1**(对应本章第 9 节) | 弥补 Day 0 全托管无法用新编码的缺口 |
+| **CloudFront 实时直播(LL-HLS)** | CloudFront 原生支持 LL-HLS 分发,**直播延迟 2-5 秒**(对应本章第 10 节) | 替代传统 HLS 10-30 秒延迟 |
+| **Graviton(Arm)实例转码** | Graviton3/4 跑 FFmpeg **性价比比 x86 高 20-40%**,转码农场省成本 | 替代传统 x86 EC2 转码 worker(aws_11) |
+| **Bedrock 视频内容理解** | 多模态大模型做**自动字幕生成(ASR)、视频摘要、场景标签、内容审核**——替代传统 Rekognition 的固定模型 | 补本章 12.3 节 AI 审核的"固定模型 vs 大模型"差距 |
+| **Kinesis Video Streams → S3 直通** | 2024 起 KVS 简化到 S3 的管道,**直播录制归档更省事** | 简化直播归档链路 |
+
+> 🔄 **2026 话术**(被问"在 AWS 上怎么做"时):
+> "Day 0 我会用 **S3 原始桶 + pre-signed URL 直传 + MediaConvert 托管转码 + CloudFront 分发 + DynamoDB 元数据**,几小时跑通主链。扩展阶段把转码切 **ECS + FFmpeg + Spot**(省钱、可控 per-title / AV1),用 **SQS** 削峰,**CloudFront 预热**热片。Day N 上 **多 Region S3 复制 + CloudFront 全球 + 嵌入式 PoP**,直播用 **MediaLive + MediaPackage + LL-HLS**,DRM 用 MediaPackage 接 Widevine/PlayReady,AI 审核用 **Rekognition + Bedrock** 多模态。**最大成本是 CDN 出口流量,不是计算**——所以优化优先长尾省 CDN,其次 AV1/per-title 砍码率,最后 S3 分级归档冷视频。"
+
+> ⚠️ **拿不准处**:① MediaConvert 的 AV1 托管输出在 2024 才逐步铺开,**部分 Region 可能仍需自建 FFmpeg 切 AV1**,生产前需查 AWS 区域可用性;② Bedrock 做视频内容理解目前主要是**逐帧 + ASR 文本路径**,真正的端到端视频大模型(如 Gemini 1.5 视频原生)在 AWS 上还要等更上层服务封装,设计时建议讲"Bedrock + Rekognition 组合"而非单一依赖;③ CloudFront embedded PoP 的部署门槛高(需和 AWS 商务谈,要求带宽基数),中小客户拿不到,**面试讲"理论上对标 Open Connect,实际中小用标准 CloudFront"即可**。
+
+> 🔗 **连接本节**:本节是 **Ch14 YouTube 的 AWS 落地**——把本章前 13 节的设计(上传/转码/CDN/编码)对应到具体 AWS 服务。Part II 交叉引用:**aws_09 CloudFront**(CDN + Origin Shield + 嵌入式 PoP)、**aws_10 S3**(原始/输出桶 + 存储分级 + Cross-Region Replication)、**aws_11 ECS/EC2**(Spot 转码农场 + Graviton)、**aws_12 SQS/Kinesis/MediaConvert**(任务削峰 + 托管转码 + Step Functions 编排)。和 **Ch15 Drive** 的分块上传是同一套(S3 multipart + pre-signed),只是视频多了转码链路。

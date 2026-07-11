@@ -574,3 +574,360 @@ flowchart LR
 7. **写路径先持久化**(post 表)再 fanout,不丢;读路径合并去重排序补全。
 
 > 🔗 **连接下一章**:Ch11 feed 是"**一对多推送 + 异步聚合**";**Ch12 聊天系统**是"**低延迟双向通信**"——WebSocket、消息状态、多端同步,从"读 feed"切换到"实时收发"。
+
+
+---
+
+## ☁️ AWS 实现(Day 0 → 扩展 → Day N)⭐⭐⭐⭐⭐
+
+> **本节定位**:**AWS 书 Part III / Ch16 落地视角**——把上面 SDE 设计的 Feed 系统(推/拉/fan-out、明星 outbox、cursor 分页)**搬上 AWS**。前面讲的 push/pull/hybrid 是"纸上架构",这一节回答"用哪些 AWS 服务真的把它跑起来,从 Day 0 MVP 一路演进到 Day N 全球生产级"。引用 **Part II** 服务:`aws_10`(DynamoDB/Neptune 图库)、`aws_12`(Kinesis/SQS/SNS/EventBridge)、`aws_11`(Lambda/ECS)。
+
+> 💡 **核心心智**:AWS 书的 Day 0 → Day N 不是"一步到位",而是**渐进演进**——先单 Region 单表跑通(Pull 模式),再加异步 fan-out 预计算(Push),再扛明星(Hybrid),最后多 Region 全球低延迟。**每一步对应一个 SDE 抉择的 AWS 落地**。
+
+---
+
+### 🗺️ AWS 架构总览
+
+```mermaid
+flowchart TB
+    subgraph CLIENT["客户端"]
+        APP["Mobile / Web App"]
+    end
+    subgraph EDGE["接入层"]
+        CF["CloudFront<br/>(媒体 CDN)"]
+        AGW["API Gateway<br/>(发帖/读 Feed API)"]
+        WS["API Gateway WebSocket<br/>/ AppSync<br/>(新帖实时推送)"]
+    end
+    subgraph WRITE["写路径(发帖)"]
+        POST["Post Lambda<br/>(写 post 表)"]
+        DDB[("DynamoDB<br/>post / user / follow")]
+        STREAM["DynamoDB Streams<br/>/ Kinesis"]
+        FAN["Fan-out Lambda<br/>(查粉丝+扇出)"]
+        INBOX[("DynamoDB<br/>inbox timeline")]
+        CACHE[("ElastiCache Redis<br/>热 Feed / outbox")]
+    end
+    subgraph GRAPH["社交关系"]
+        NEP[("Neptune<br/>社交图谱<br/>(你可能认识)")]
+    end
+    subgraph READ["读路径(看 Feed)"]
+        READL["Feed Lambda<br/>(读 inbox+合并)"]
+        OS["OpenSearch<br/>(关键词/话题搜索)"]
+    end
+
+    APP --> CF
+    APP --> AGW
+    APP --> WS
+    CF --> S3[("S3 媒体对象")]
+    AGW --> POST
+    POST --> DDB
+    DDB --> STREAM
+    STREAM --> FAN
+    FAN -->|"查粉丝"| NEP
+    FAN -->|"push 普通人"| INBOX
+    FAN -->|"明星只写 outbox"| CACHE
+    AGW --> READL
+    READL --> INBOX
+    READL -->|"hybrid 拉明星"| CACHE
+    READL --> OS
+    FAN -.->|"CDC 索引"| OS
+    WS -.->|"新帖推送"| APP
+
+    style CLIENT fill:#E3F2FD,stroke:#1976D2,color:#1f1f1f
+    style EDGE fill:#FFF3E0,stroke:#F57C00,color:#1f1f1f
+    style WRITE fill:#E8F5E9,stroke:#388E3C,color:#1f1f1f
+    style GRAPH fill:#F3E5F5,stroke:#7B1FA2,color:#1f1f1f
+    style READ fill:#E8F5E9,stroke:#388E3C,color:#1f1f1f
+    style APP fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style CF fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style AGW fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style WS fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style POST fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style DDB fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style STREAM fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style FAN fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style INBOX fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style CACHE fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style NEP fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style READL fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style OS fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style S3 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+```
+
+**关键 AWS 服务对应**(背):
+
+| SDE 组件 | AWS 服务 | Part II 章 |
+|---------|----------|-----------|
+| post 表 / follow 表 / inbox timeline | **DynamoDB** | aws_10 |
+| 社交图(关注关系、"你可能认识") | **Neptune**(图数据库) | aws_10 |
+| fan-out MQ / 异步预计算 | **Kinesis Data Streams** + Lambda,**或 SQS** | aws_12 |
+| 发帖 CDC 触发器 | **DynamoDB Streams** | aws_10/aws_12 |
+| 热 Feed 缓存 / 明星 outbox | **ElastiCache(Redis)** | aws_04/aws_10 |
+| 关键词/话题搜索 | **OpenSearch** | aws_10 |
+| 发帖/读 Feed API | **API Gateway + Lambda** | aws_11/aws_12 |
+| 新帖实时推送 | **AppSync(GraphQL Subscriptions)** / API Gateway WebSocket | aws_12 |
+| 媒体存储 + CDN | **S3 + CloudFront** | aws_10/aws_09 |
+| 发布流程编排(审核/敏感词) | **Step Functions** + Lambda | aws_11/aws_12 |
+
+---
+
+### Day 0 MVP(先跑通,单 Region,纯"拉"模式)
+
+Day 0 目标:**最小可用**——用户能发帖、能看关注的人的帖子。**不优化读延迟,不做 fan-out 预计算**。直接用一张 DynamoDB 表扛所有查询模式,读 Feed 用"拉"模式实时聚合。
+
+```mermaid
+flowchart LR
+    U([用户发帖]) --> AGW["API Gateway"]
+    AGW --> L1["Post Lambda"]
+    L1 --> DDB[("DynamoDB<br/>单表")]
+    R([用户看 Feed]) --> AGW2["API Gateway"]
+    AGW2 --> L2["Feed Lambda<br/>(拉模式: 查关注者<br/>+ 查每人最近帖)"]
+    L2 --> DDB
+    L2 --> OUT["返回 feed"]
+
+    style U fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style R fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style AGW fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style AGW2 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style L1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style L2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style DDB fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style OUT fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+```
+
+**Day 0 单表设计**(AWS 书 Table 16-3 的"宽表"模式,一张表覆盖所有查询模式):
+
+| 查询模式 | Partition Key | Sort Key |
+|---------|--------------|---------|
+| 用户信息 + 计数(粉丝/关注/帖子数) | `u#{userId}` | `count` |
+| 用户的所有帖子 | `u#{userId}#post` | `p#{postId}` |
+| 用户关注的人 | `u#{userId}#following` | `u#{followeeId}` |
+| 用户的粉丝(**fanout 热点**) | `u#{userId}#followers` | `u#{followerId}` |
+| 帖子的评论 | `p#{postId}#comments` | `c#{commentId}` |
+| 帖子的点赞计数 | `p#{postId}#likeCount` | `{count}` |
+
+> 💡 **关键细节**:**post_id 用 Snowflake 风格**(趋势递增,接 Ch7),这样 Sort Key 天然按时间排序,**cursor 分页只需 `WHERE SK < lastSeenPostId`**,无需额外时间戳列。AWS 书明确推荐 Snowflake。
+
+**Day 0 读 Feed(纯拉模式)**:
+```python
+def get_feed_day0(user_id, cursor=None, limit=20):
+    followees = ddb.query(PK=f"u#{user_id}#following")  # 我关注的人
+    ids = []
+    for f in followees:
+        # 拉每个关注者最近 N 条帖(读放大,但 Day 0 够用)
+        posts = ddb.query(PK=f"u#{f}#post",
+                          SK=f"p#{cursor}" if cursor else None,
+                          limit=50)
+        ids.extend(posts)
+    return sorted(ids, reverse=True)[:limit]   # 合并去重排序
+```
+
+> 🪤 **Day 0 的局限**:拉模式读放大严重(关注 1000 人 = 1000 次查询),粉丝增长后必崩。**Day 0 够用是因为用户少、关注少**;一旦上量必须演进到 Push 预计算(见下节)。**这正是 SDE "Push vs Pull" 抉择在 AWS 上的落地——Day 0 选 Pull(简单),扩展时上 Push(读快)**。
+
+---
+
+### 扩展(单 Region):fan-out 预计算 + 缓存 + 扛明星
+
+用户量上来后,Day 0 的"拉"模式读延迟爆炸(关注 1000 人 = 1000 次 DynamoDB 查询)。**扩展阶段引入异步 fan-out 预计算每个用户的 inbox(push 模式),并用 ElastiCache 扛热 Feed 和明星 outbox(hybrid)**。
+
+#### 推/拉/fan-out 在 AWS 上分别怎么落地
+
+```mermaid
+flowchart LR
+    POST["发帖事件<br/>(DynamoDB Streams)"] --> Q{"作者粉丝数?"}
+
+    Q -->|"少 (<10万) 普通人"| PUSH["Push 扇出写<br/>────────<br/>Fan-out Lambda<br/>遍历粉丝,<br/>写每人 inbox"]
+    Q -->|"多 (>10万) 明星"| CELEB["只写 outbox<br/>────────<br/>1 次写 ElastiCache<br/>不扇出"]
+    Q -->|"超大V + 活跃粉多"| BATCH["异步分批 push<br/>────────<br/>SQS 限速队列<br/>活跃粉丝分批推送"]
+
+    PUSH --> INBOX[("DynamoDB inbox<br/>(粉丝 timeline)")]
+    CELEB --> CACHE[("ElastiCache<br/>明星 outbox")]
+    BATCH --> INBOX
+
+    READ["读 Feed"] --> HYBRID["Hybrid 聚合<br/>────────<br/>① 读自己 inbox(push 预计算)<br/>② 拉关注明星 outbox<br/>③ 合并+去重+排序"]
+    INBOX --> HYBRID
+    CACHE --> HYBRID
+    HYBRID --> HOT[("ElastiCache<br/>热 Feed 缓存")]
+    HOT --> RET([返回])
+
+    style POST fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style Q fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style PUSH fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style CELEB fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style BATCH fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style INBOX fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style CACHE fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style READ fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style HYBRID fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style HOT fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style RET fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+```
+
+**① Push 扇出写(普通人)—— Kinesis/SQS + Lambda**:
+发帖落 DynamoDB 后,**DynamoDB Streams**(或 Kinesis)触发 Fan-out Lambda。Lambda 查粉丝列表(`u#{authorId}#followers`),把 `postId` 批量写进每个粉丝的 inbox(`u#{fanId}#inbox`,Sort Key = `t#{snowflakeTs}#p#{postId}`)。
+- **批量写优化**:用 **DynamoDB `BatchWriteItem`**(一次 25 条)+ **Redis pipelining**(AWS 书强调:100 帖/秒 × 1000 粉 = 10 万次 Redis 调用,必须 pipeline 批量)。
+- **滑动窗口**:inbox 只保留最近 N 条(AWS 书举 30 条),`LTRIM` 或 DynamoDB TTL 自动清理——控存储成本。
+
+**② 明星只写 outbox —— ElastiCache Redis**:
+粉丝 >10 万的作者,fan-out Lambda **不扇出**,只把帖子 ID 写一份到 ElastiCache 的明星 outbox(sorted set,score=时间戳)。**1 次写代替 1 亿次写**。
+
+**③ 读时聚合(Hybrid)—— Feed Lambda**:
+```python
+def get_feed_hybrid(user_id, cursor=None):
+    # ① 自己的 push inbox(DynamoDB, 预计算好的)
+    push_ids = ddb.query(PK=f"u#{user_id}#inbox", SK_lt=cursor, limit=100)
+    # ② 拉关注的明星 outbox(ElastiCache, 读时合)
+    for star in get_following_celebrities(user_id):
+        push_ids += redis.zrevrange(f"outbox:{star}", 0, 50)
+    # ③ 合并去重排序 + 批量补全 post 全文
+    ids = sorted(set(push_ids), reverse=True)[:20]
+    return batch_hydrate_posts(ids)
+```
+
+**④ 热 Feed 缓存 —— ElastiCache**:
+读放大只对热门用户(活跃 30 天内)预算 inbox 缓存;冷用户直接查 DynamoDB on-disk(AWS 书原话)。**这节省了 Redis 内存成本**——只缓存活跃用户。
+
+> 💡 **SDE 抉择 ↔ AWS 落地的对应**:
+> - **Push(读快写放大)** → DynamoDB inbox 表 + Lambda 扇出,**写多读少场景**。
+> - **Pull(读慢无明星灾)** → 不预计算,Feed Lambda 读时聚合,**明星专属**。
+> - **Hybrid(主流)** → 普通人 push + 明星 pull(outbox),**门槛 = 粉丝数阈值**。
+
+> 🪤 **追问陷阱**:"fan-out 写放大在 DynamoDB 上怎么扛?" → **三点**:① **BatchWriteItem 批量**(25 条/请求);② **粉丝列表预查询 + 缓存**(避免每次扇出都查 Neptune);③ **热门用户的 inbox 走 ElastiCache**(DynamoDB 只存冷用户的)。AWS 书特别强调 Redis pipeline 批量是扛 fan-out 的关键。
+
+---
+
+### Day 0 → Day N 对照表
+
+| SDE 组件 | Day 0(最小) | 扩展(单 Region) | Day N(生产级) |
+|---------|------------|----------------|--------------|
+| post 持久化 | DynamoDB 单表 | DynamoDB + S3(媒体) | DynamoDB **Global Tables**(多 Region) |
+| follow 关系 | DynamoDB(`#followers`) | DynamoDB + ElastiCache 缓存 | **Neptune** 图库(社交图谱) |
+| fan-out 机制 | 无(纯拉) | DynamoDB Streams + Lambda | **Kinesis/SQS + Step Functions 编排** |
+| inbox timeline | 不预计算 | DynamoDB inbox 表(push) | DynamoDB + ElastiCache 双层 |
+| 明星 outbox | 无 | ElastiCache Redis | ElastiCache + Global Datastore 跨区 |
+| 热 Feed 缓存 | 无 | ElastiCache Redis | ElastiCache + DAX(DynamoDB 加速) |
+| 读 Feed API | API Gateway + Lambda | 同 + ElastiCache | 同 + 多 Region Route 53 |
+| 关键词搜索 | DynamoDB scan(慢) | OpenSearch(DynamoDB Streams 灌) | OpenSearch 多 AZ |
+| 新帖推送 | 无(刷新拉) | AppSync 订阅 | AppSync / WebSocket 多 Region |
+| 媒体 | S3 | S3 + CloudFront CDN | CloudFront 多边缘 + 多 Region S3 |
+| 发布编排 | 无 | Lambda 直链 | **Step Functions**(审核/敏感词/多步) |
+| 鉴权 | Cognito 或自建 | Cognito + JWT | Cognito + 多 Region 用户池同步 |
+
+---
+
+### Day N 生产级(全球、实时、智能)
+
+Day N 解决三个问题:**① 全球用户低延迟(多 Region)② 社交图谱高级查询("你可能认识")③ 实时推送 + 智能内容处理**。
+
+#### ① DynamoDB Global Tables 多 Region(全球低延迟)
+
+```mermaid
+flowchart LR
+    WORLD["全球用户"] --> R53["Route 53<br/>(延迟路由)"]
+    R53 -->|"北美用户"| RG1["us-east-1<br/>DynamoDB 副本"]
+    R53 -->|"欧洲用户"| RG2["eu-west-1<br/>DynamoDB 副本"]
+    R53 -->|"亚太用户"| RG3["ap-northeast-1<br/>DynamoDB 副本"]
+    RG1 <-->|"异步复制<br/>(最终一致)"| RG2
+    RG2 <-->|"异步复制"| RG3
+    RG1 <-->|"异步复制"| RG3
+
+    style WORLD fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style R53 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style RG1 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style RG2 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style RG3 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+```
+
+**DynamoDB Global Tables** 是 **多 Region active-active** 复制(接 aws_01 的 PACELC:DynamoDB = PA/EL)。每个 Region 都可读写,异步复制到其他 Region(最终一致)。
+- **读**:用户读最近的 Region,单数毫秒延迟。
+- **写**:发帖写本地 Region,异步复制全球——**NFR 接受最终一致**(AWS 书明确:"eventual consistency is fine for reflecting posts in newsfeed")。
+- **ElastiCache 跨区**:**Global Datastore for Redis** 做缓存跨区复制。
+
+> 🪤 **追问陷阱**:"Global Tables 怎么处理写冲突?" → DynamoDB 用 **LWW(Last-Write-Wins)** + 时间戳。同一行在多 Region 同时写,后写覆盖。Feed 场景下**不同用户的 post 天然不冲突**(不同 PK);**计数器(点赞数)用 DynamoDB AtomicCounter 或最终一致聚合**——AWS 书明确说计数走 MQ + 缓存,不直接写表(避免热点分区限流)。
+
+#### ② Neptune 存社交图谱("你可能认识")
+
+DynamoDB 存"直接关注关系"够用,但**二度/三度关系查询**(LinkedIn 的"你可能认识"、Facebook 的"共同好友")在 DynamoDB 上要多次 scan,极慢。**Neptune**(AWS 图数据库,接 aws_10)用 Gremlin/OpenCypher 查询,O(度数)复杂度。
+
+```mermaid
+flowchart LR
+    Q["'你可能认识'<br/>(二度好友)"] --> NEP[("Neptune")]
+    NEP --> Q1["g.V('userA').out('follows').out('follows').dedup()"]
+    Q1 --> RES["返回二度连接<br/>(毫秒级)"]
+
+    DDB[("DynamoDB<br/>关注关系")] -->|"CDC 同步"| NEP
+
+    style Q fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style NEP fill:#90CAF9,stroke:#1976D2,color:#1f1f1f
+    style Q1 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style RES fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style DDB fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+```
+
+> 💡 **演进逻辑(AWS 书原话)**:**Day 0 用 MySQL/DynamoDB 存关系够用;系统变大、需要复杂图查询时再迁 Neptune**。LinkedIn 自建 LIquid、X 用 FlockDB 都是图库落地。**不是 Day 0 就上图库**——SDE 的"渐进扩展"原则。
+
+#### ③ 新动态实时推送(AppSync / WebSocket)
+
+刷新拉取已过时。Day N 用**持久连接**推送新帖:
+- **AppSync GraphQL Subscriptions**:客户端订阅 `onNewPost`,fan-out Lambda 写 inbox 时同时触发 AppSync 推送。**最适合多端订阅**。
+- **API Gateway WebSocket**:更底层,适合需要自定义协议的场景。AWS 书说"persistent bidirectional connections"(详接 Ch19 聊天系统)。
+
+#### ④ Step Functions 编排复杂发布流程(审核/敏感词)
+
+发帖不是"一写就完"——Day N 要 **内容审核、敏感词过滤、版权检测、广告插入**。这些是**多步有状态流程**,用 **Step Functions**(接 aws_11/aws_12)编排:
+
+```mermaid
+flowchart LR
+    POST([发帖]) --> SF["Step Functions<br/>发布工作流"]
+    SF --> S1["① 敏感词/仇恨言论检测<br/>(Bedrock/Comprehend)"]
+    S1 -->|"通过"| S2["② 媒体处理<br/>(转码/缩略图)"]
+    S2 --> S3["③ 写 post 表 + S3"]
+    S3 --> S4["④ 触发 fan-out"]
+    S4 --> S5["⑤ 索引到 OpenSearch"]
+    S1 -->|"违规"| BLOCK["拦截 + 通知用户"]
+
+    style POST fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style SF fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style S1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style S2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style S3 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style S4 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style S5 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
+    style BLOCK fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+```
+
+---
+
+### 💰 成本与性能
+
+| 维度 | 注意点 | 优化 |
+|------|--------|------|
+| **DynamoDB 计费** | 按请求(On-Demand)或预置 RCU/WCU | 读多写多用 On-Demand;稳态用预置 + Auto Scaling |
+| **fan-out 写放大** | 1 帖 × 1000 粉 = 1000 次 inbox 写 | **BatchWriteItem**(25 条/批)+ 只缓存活跃用户 inbox |
+| **GSI 成本** | GSI 占额外存储 + RCU/WCU | 慎建,用**稀疏 GSI**(只索引有属性的行) |
+| **分区热点** | 明星分区超 3000 RCU/1000 WCU 限流 | **散列分区键**(加随机后缀)+ 计数走 MQ+缓存 |
+| **ElastiCache 成本** | 内存贵,全量缓存不现实 | **只缓存活跃 30 天用户 inbox**;冷用户查 on-disk |
+| **跨区复制费** | Global Tables 跨区流量计费 | 评估是否真需要全球写;读多可只读副本 |
+| **Lambda 冷启动** | fan-out Lambda 高并发冷启动延迟 | **Provisioned Concurrency** 保热 |
+
+> 💡 **AWS 书的核心成本洞察**:**Redis 内存贵**,不要全量缓存所有用户 timeline。**只缓存活跃用户**(30 天内访问),冷用户直接 DynamoDB on-disk——这是"用便宜存储扛冷数据"的经典权衡。
+
+> 🪤 **追问陷阱**:"DynamoDB 单分区 10GB 限制,明星 1 亿粉怎么存?" → 单分区按 user_id 做 PK,1 亿粉 × 100 字节 ≈ 10GB 接近上限。**解法**:**散列分区键**(如 `u#{userId}#followers#{shardNum}`),把粉丝分到多个分区;读时并行扫所有 shard 再合并。AWS 书原话推荐这招(详见 aws_10 Ch10 DynamoDB 分区策略)。
+
+---
+
+### 🆕 2026 增量(AWS 服务演进)
+
+| 增量 | 服务 | 应用 |
+|------|------|------|
+| **DynamoDB Global Tables 强一致读** | 2024+ 支持多 Region 强一致 | 全球用户"读自己刚发的帖"不再穿越(原书只能最终一致) |
+| **AppSync Merged API** | GraphQL 联邦聚合多后端 | 一个 GraphQL 查询合并 post/user/feed/count,替 Feed Lambda 手动聚合 |
+| **EventBridge Pipes** | 简化事件管道 | DynamoDB Streams → Pipe → Step Functions,**少写胶水 Lambda** |
+| **Bedrock 做 Feed 内容推荐/摘要** | 托管大模型 | ① 推荐流召回+精排(替自建 ML);② 帖子自动摘要;③ 内容审核 |
+| **DynamoDB Zero-ETL → OpenSearch** | 原生同步 | 不再写 Lambda 转换层灌 OpenSearch,配置即同步 |
+| **Lambda Function URL + SnapStart** | 冷启动优化 | fan-out Lambda Java 启动从秒级降到毫秒 |
+
+> 🔄 **2026 话术(直接背)**:"AWS 书的 Day N 架构停在 2023。**2026 几个增量值得提**:① **DynamoDB Global Tables 支持强一致读**,全球用户'读自己刚发的帖'不再穿越;② **EventBridge Pipes** 让 DynamoDB Streams → Step Functions 的管道少写胶水 Lambda;③ **Bedrock** 直接做 Feed 推荐召回/帖子摘要/内容审核,替自建 ML;④ **AppSync Merged API** 用 GraphQL 联邦聚合多后端,替 Feed Lambda 手动合并。**这些把 Day N 的运营成本和代码量都显著降下来**。"
+
+> ⚠️ **拿不准处**(面试可主动坦白):① **fan-out 阈值**(10 万还是动态 ML 预测)需 A/B 测,无定论;② **inbox 该放 DynamoDB 还是 ElastiCache** 看读写比和预算,两者都常见;③ **Global Tables 强一致读**对计数器(点赞数)仍可能用最终一致聚合(强一致太贵)——面试讲清"哪些字段强一致、哪些最终一致"的取舍。
+
+> 🔗 **连接 Part II**:本节落地服务详见 `aws_10`(DynamoDB/Neptune/S3/OpenSearch)、`aws_12`(Kinesis/SQS/SNS/EventBridge/Step Functions)、`aws_11`(Lambda/ECS)。PACELC 分类(DynamoDB=PA/EL)见 `aws_01`;缓存策略见 `aws_04`;负载均衡见 `aws_05`;网络 CDN 见 `aws_09`。

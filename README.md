@@ -248,7 +248,7 @@ graph TB
 
     style P1 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
     style P2 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
-    style P3 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
+    style P3 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
     style A1 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style A2 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style A3 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
@@ -262,14 +262,14 @@ graph TB
     style B3 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style B4 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style B5 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
-    style C1 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C2 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C3 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C4 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C5 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C6 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C7 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
-    style C8 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
+    style C1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C3 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C4 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C5 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C6 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C7 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style C8 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
 ```
 
 > ⚡ = 主题与已有 SDE 笔记重叠(Part III 全部 8 章)。⭐ = SDE 几乎没讲、**净增量价值最高**。
@@ -435,14 +435,14 @@ graph TB
 - [x] A-Ch13: AWS 大数据/ML → [aws_13](SDA/aws_13-AWS大数据与机器学习.md)
 
 **Part III · 设计实战(与 SDE 重叠,AWS 视角)**
-- [ ] A-Ch14: 短链
-- [ ] A-Ch15: 爬虫 + 搜索
-- [ ] A-Ch16: 社交 + Feed
-- [ ] A-Ch17: 游戏排行榜
-- [ ] A-Ch18: 酒店预订
-- [ ] A-Ch19: 聊天
-- [ ] A-Ch20: 视频处理流水线
-- [ ] A-Ch21: 证券交易
+- [x] A-Ch14: 短链 → [ch1_08](SDE-Vol1/ch1_08-设计短链服务.md)
+- [x] A-Ch15: 爬虫 + 搜索 → [ch1_09](SDE-Vol1/ch1_09-设计网络爬虫.md)
+- [x] A-Ch16: 社交 + Feed → [ch1_11](SDE-Vol1/ch1_11-设计新闻Feed.md)
+- [x] A-Ch17: 游戏排行榜 → [ch2_10](SDE-Vol2/ch2_10-设计游戏排行榜.md)
+- [x] A-Ch18: 酒店预订 → [ch2_07](SDE-Vol2/ch2_07-设计酒店预订系统.md)
+- [x] A-Ch19: 聊天 → [ch1_12](SDE-Vol1/ch1_12-设计聊天系统.md)
+- [x] A-Ch20: 视频处理流水线 → [ch1_14](SDE-Vol1/ch1_14-设计YouTube.md)
+- [x] A-Ch21: 证券交易 → [ch2_13](SDE-Vol2/ch2_13-设计证券交易.md)
 
 ---
 
