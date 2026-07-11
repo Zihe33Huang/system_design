@@ -796,7 +796,7 @@ flowchart LR
 
     VP --> VP1["例: customer 表拆成<br/>customer_info(基本)<br/>customer_contact(联系)"]
     HASH --> HASH1["优点: 无热点均匀<br/>缺点: 不能范围查询(scatter-gather)"]
-    RANGE --> RANGE1["优点: 范围扫快<br/>缺点: 热点(A 开头客户多 → P1 过载)"
+    RANGE --> RANGE1["优点: 范围扫快<br/>缺点: 热点(A 开头客户多 → P1 过载)"]
 
     style PART fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style VP fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
