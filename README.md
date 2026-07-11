@@ -247,7 +247,7 @@ graph TB
     P2 --> P3
 
     style P1 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
-    style P2 fill:#80DEEA,stroke:#0097A7,color:#1f1f1f
+    style P2 fill:#A5D6A7,stroke:#388E3C,color:#1f1f1f
     style P3 fill:#FFCC80,stroke:#F57C00,color:#1f1f1f
     style A1 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
     style A2 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
@@ -259,9 +259,9 @@ graph TB
     style A8 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style B1 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style B2 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
-    style B3 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
-    style B4 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
-    style B5 fill:#FFE082,stroke:#F9A825,color:#1f1f1f
+    style B3 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style B4 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
+    style B5 fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
     style C1 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
     style C2 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
     style C3 fill:#EF9A9A,stroke:#C62828,color:#1f1f1f
@@ -430,9 +430,9 @@ graph TB
 **Part II · AWS 服务深挖**
 - [x] A-Ch9: AWS 网络 → [aws_09](SDA/aws_09-AWS网络服务.md)
 - [x] A-Ch10: AWS 存储 → [aws_10](SDA/aws_10-AWS存储服务.md)
-- [ ] A-Ch11: AWS 计算
-- [ ] A-Ch12: AWS 消息/编排/监控/IAM
-- [ ] A-Ch13: AWS 大数据/ML
+- [x] A-Ch11: AWS 计算 → [aws_11](SDA/aws_11-AWS计算服务.md)
+- [x] A-Ch12: AWS 消息/编排/监控/IAM → [aws_12](SDA/aws_12-AWS消息编排监控IAM.md)
+- [x] A-Ch13: AWS 大数据/ML → [aws_13](SDA/aws_13-AWS大数据与机器学习.md)
 
 **Part III · 设计实战(与 SDE 重叠,AWS 视角)**
 - [ ] A-Ch14: 短链
