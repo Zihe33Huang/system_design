@@ -1,5 +1,9 @@
 # Book 3 · Chapter 13: AWS 大数据、分析与机器学习 (Big Data, Analytics, and ML Services)
 
+> 📑 **导航**:[← AWS消息/IAM](aws_12-AWS消息编排监控IAM.md) · [📚 总目录](../README.md) · 🏁 完结
+> 🔗 **相关**:[AWS存储](aws_10-AWS存储服务.md) · [AWS消息/IAM](aws_12-AWS消息编排监控IAM.md) · [AWS计算](aws_11-AWS计算服务.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》Part II(云服务落地篇)的收官章**——它把 **Part I 的 aws_08(大数据架构 Lambda/Kappa/HDFS/Kafka)** 和 **aws_10(S3 数据湖 / Redshift)** 里的"原理"**落地到 AWS 云上的具体服务**。一句话:**之前你学了"大数据/ML 是什么、为什么要这套架构",本章告诉你"AWS 把每一步做成了什么产品、怎么串成一条数据流水线"**。两大主线:**大数据与分析(EMR / Glue / Athena / Redshift / QuickSight)** 和 **机器学习(SageMaker + 开箱即用服务 + Bedrock 生成式 AI)**。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把 EMR/EMRFS、Glue(Crawler/Data Catalog/Data Quality)、Athena、QuickSight、Redshift(Spectrum/RMS/分布风格)、SageMaker(Build/Train/Deploy)、ML 应用服务(Rekognition/Comprehend/Transcribe/Polly/Translate/Forecast/Kendra/Lex/CodeWhisperer)、Inferentia/Trainium 一口气讲完,配餐厅案例串"最热菜 / 最高分餐厅 / 评论情感分析"——是面试"AWS 大数据/ML 怎么上云"的标准参考。但**几处停在 2022**:① **完全没讲生成式 AI / Amazon Bedrock**——而这是 **2023 后 AWS 最重磅发布,2026 已是 ML 章节必考**;② **CodeWhisperer 还在讲**——而 **2024 已升级为 Amazon Q Developer**;③ **Athena 引擎还写 Presto**——而 **2024 默认 Trino**;④ **SageMaker 还是一个大杂烩**——而 **2024 re:Invent 推出 Unified Studio / HyperPod / Canvas 无代码 ML,平台形态彻底变**;⑤ **Trainium 只提了 v1,没讲 Trainium2**——而 **2024 Trainium2 已是大模型训练主力(Anthropic 用它训 Claude)**;⑥ **数据湖治理只字未提 Lake Formation**;⑦ **流式入仓 / Aurora Zero-ETL 完全没讲**。本章把这些 2026 硬核料全补上,并为**非科班读者**加了一整节"基础概念铺垫"——把"什么是大数据、什么是 ETL、数据湖和数仓的区别、什么是机器学习、训练和推理是什么"这些**对非科班最陌生**的概念用比喻讲透。

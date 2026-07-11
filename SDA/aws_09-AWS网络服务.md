@@ -1,5 +1,9 @@
 # Book 3 · Chapter 9: AWS 网络服务 (AWS Network Services)
 
+> 📑 **导航**:[← 架构模式](aws_08-架构设计与模式.md) · [📚 总目录](../README.md) · [AWS存储 →](aws_10-AWS存储服务.md)
+> 🔗 **相关**:[网络协议](aws_06-通信网络与协议.md) · [负载均衡](aws_05-负载均衡.md) · [短链](../SDE-Vol1/ch1_08-设计短链服务.md)
+
+
 > **本章定位**:这是 **Part II(第 9-13 章)的第一章重头戏**——它把 Part I(aws_06 通信网络与协议)讲的"协议原理"**落地到 AWS 云上**。一个完全没碰过 AWS 的读者读完本章,能理解 AWS 是怎么把"区域/可用区/子网/路由/DNS/负载均衡/CDN"这些概念变成可点的按钮和可写的命令的。一句话:**aws_06 讲"网络是怎么通信的",本章讲"AWS 怎么帮你把网络搭起来"**。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把 VPC、子网、CIDR、路由表、IGW/NAT、SG/NACL、VPC Peering/TGW/PrivateLink/VPN/Direct Connect、Route 53、ELB、API Gateway、CloudFront、WAF 一锅端讲得相当全,而且全程用 **Cafe Delhi Heights 餐厅连锁**这个贯穿案例串起来——这是它的亮点。但**几处停在 2022**:① **VPC 创建还是手动点 Console**——而 2026 主流是 **IaC(Terraform/CDK)+ VPC Lattice 服务级网络**;② **IPv6 一笔带过**——而 2026 AWS 默认给 VPC 分 IPv6,IPv4 地址已在涨价;③ **CLB 还在并列讲**——而 2026 CLB 已不推荐新建;④ **没提 Global Accelerator / Local Zones / Wavelength / Outposts / Cloud WAN** 这组"边缘 + 全球骨干"新东西;⑤ **边缘计算只说 CloudFront 缓存**——而 2026 是 **CloudFront Functions + Lambda@Edge 两层**;⑥ **Route 53 只讲基础路由策略**——而 2026 有 CIDR 定位、健康检查 + DNS 故障转移已成多区域 HA 标配。本章把这些 2026 硬核料全补上,并为**非科班读者**加了一整节"基础概念铺垫"(IP/子网/DNS/CDN/负载均衡到底是个啥)。

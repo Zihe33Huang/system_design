@@ -1,5 +1,9 @@
 # Book 3 · Chapter 7: 容器化、编排与部署 (Containerization, Orchestration, and Deployments)
 
+> 📑 **导航**:[← 网络协议](aws_06-通信网络与协议.md) · [📚 总目录](../README.md) · [架构模式 →](aws_08-架构设计与模式.md)
+> 🔗 **相关**:[AWS计算](aws_11-AWS计算服务.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》第 7 章**——讲**"应用怎么打包、怎么跑、怎么扩、怎么发"的现代工程化答案**。如果说 Ch1 是"设计前的权衡",Ch5 是"流量分发",那 Ch7 就是**部署载体的终极形态**:**容器(Docker)解决打包可移植,Kubernetes(K8s)解决大规模运行,CI/CD 解决从代码到生产的自动化**。一句话:**容器 = 进程级隔离的可移植单元;K8s = 容器的"操作系统";CI/CD = 代码到生产的自动流水线**——三者合起来是 2026 云原生应用的事实标准底座,也是 SDE-Vol1 Ch1 "从零扩展到百万用户"里"加服务器"那一步的现代答案。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把**部署演进(物理机→VM→容器)、Docker(镜像分层/Dockerfile/registry/容器生命周期)、K8s(架构/核心对象 Pod/Deployment/Service/Deployment 策略)、CI/CD(Gitflow)**讲得相当系统——是面试"概念题"的标准答案。但**几处停在 2022**:① **K8s 仍默认 Docker 作运行时**——而 2021 年底 K8s 1.24 起**移除 dockershim,Docker Engine 不再是 K8s 运行时**(改 containerd/CRI-O,OCI 标准),原书图里还画着 Docker 作 K8s 运行时,这是过时点;② **节点扩容只提 Cluster Autoscaler**——而 **2024 起 AWS Karpenter 成主流**(秒级/数十秒级扩容、按需选实例类型、无需 ASG);③ **完全没提 GitOps**(Argo CD/Flux)——而这是 2026 声明式交付的事实标准,直接落地 Ch1 可维护性;④ **Serverless 容器只点名 Knative/Lambda**——漏了 **Fargate / Cloud Run / Azure Container Apps** 这个免管节点的主流范式;⑤ **Service Mesh(Istio/Linkerd/Cilium)零提及**——而这是 2026 微服务治理的事实标准(接 Ch5);⑥ **eBPF/Cilium 内核态网络+安全**这个绕过 iptables 的革命性趋势零提及;⑦ **渐进式交付(Argo Rollouts/Flagger 自动化金丝雀分析)**没讲;⑧ **WASM 容器**这个新兴跨平台、毫秒冷启动技术没讲;⑨ **OCI 标准**作为"避免 Docker 锁定"的根基没系统讲。本章把这些 2026 硬核料全补上,并纠正原书"K8s 用 Docker"的过时认知。**这是 SDE 完全没覆盖的净增量章节,价值很高,要讲透。**

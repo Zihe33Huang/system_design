@@ -1,5 +1,9 @@
 # Book 3 · Chapter 3: 非关系型存储 (Nonrelational Stores)
 
+> 📑 **导航**:[← 存储&关系库](aws_02-存储类型与关系型数据库.md) · [📚 总目录](../README.md) · [缓存 →](aws_04-缓存策略与机制.md)
+> 🔗 **相关**:[存储&关系库](aws_02-存储类型与关系型数据库.md) · [AWS存储](aws_10-AWS存储服务.md) · [键值存储](../SDE-Vol1/ch1_06-设计键值存储.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》存储篇章的下半场**——如果说 Ch2 关系库是"严谨但僵硬"(ACID + 强 schema),那么 **Ch3 NoSQL 就是"灵活但松散"**(BASE + schemaless + 水平扩展)。它不是教你某一种数据库,而是教你**当关系库跑不动时的四把钥匙**:**键值、文档、列族、图**,外加 **2026 最大的新增——向量库**(RAG/AI 时代刚需)。一句话:**没有"最好的数据库",只有"最匹配访问模式的数据库"**。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把四大类(KV/文档/列族/图)的数据模型、键设计、扩展、可用性讲得很系统——Dynamo 的 sloppy quorum/hinted handoff、MongoDB 复制集、Cassandra 可调一致性/LSM 架构、Neo4j 属性图——是 NoSQL 入门的标准答案。但**几处停在 2022**:① **完全没讲向量数据库**——而这是 2023 后 NoSQL 最大的版图扩张,**Pinecone/Milvus/Weaviate/Qdrant/pgvector/DynamoDB 向量**已成本节必考;② **KV 只讲 Dynamo,没提 FoundationDB**(Apple 用的严格 ACID 事务 KV)和 **ScyllaDB**(Cassandra 的 C++ 重写,shard-per-core,延迟低 10×);③ **DynamoDB 还停在 2010 论文版**——而 **2022 后原生事务 + Global Tables** 已是跨区强一致;④ **MongoDB 没提 Atlas Vector Search**(2023 后 Mongo 也支持向量);⑤ **CAP 当三选二**——而 **2026 的真相是延迟-一致连续谱**(接 Ch1 PACELC);⑥ **图库只讲 Neo4j,没提 GNN/图神经网络**——知识图谱 + GNN 已成新范式。本章把 2026 硬核料全补上。

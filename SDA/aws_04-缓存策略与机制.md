@@ -1,5 +1,9 @@
 # Book 3 · Chapter 4: 缓存策略与机制 (Caching Policies and Strategies)
 
+> 📑 **导航**:[← NoSQL](aws_03-非关系型数据库.md) · [📚 总目录](../README.md) · [负载均衡 →](aws_05-负载均衡.md)
+> 🔗 **相关**:[AWS存储](aws_10-AWS存储服务.md) · [限流器](../SDE-Vol1/ch1_04-设计限流器.md) · [排行榜](../SDE-Vol2/ch2_10-设计游戏排行榜.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》第 4 章**——它把"缓存"这件系统设计里**最常考、最深、最容易翻车**的事讲透。缓存不是"加个 Redis"那么简单,它是一道**贯穿存储、网络、应用三层**的工程题:**缓存放哪(部署)、缓存放多久(失效)、缓存满了淘汰谁(策略)、读写顺序怎么编排(策略)、缓存坏了怎么办(三大经典问题)**。一句话:**缓存 = 用内存换时间换空间换吞吐,代价是一致性和复杂度**——这正是 Ch1 "时间 vs 空间权衡"在存储层的落地。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把**淘汰策略(LRU/LFU/Belady)、失效策略(TTL/主动/读时/写时)、六种缓存策略(cache-aside/read-through/refresh-ahead/write-through/write-around/write-back)、三种部署(进程内/进程间/远程)、CDN(push/pull)、Memcached vs Redis** 讲得相当系统——是 AWS 认证和面试"概念题"的标准答案。但**几个地方停在 2022**:① **缓存三大经典问题(穿透/击穿/雪崩)只字未提**——而这是国内大厂面试的**固定三连问**,本章必须深补;② **Redis 演进停在 6.x 单线程**——而 **2024 Redis 改许可证事件 + Valkey fork + Redis 7/8 多线程 + DragonflyDB 25× 性能**彻底改写了选型;③ **淘汰策略只讲 LRU/LFU**——而 **W-TinyLFU(Caffeine 用)已全面胜过 LRU**,是 2026 JVM 缓存的事实标准;④ **CDN 只讲静态文件**——而 **边缘计算(Cloudflare Workers/Lambda@Edge)让 CDN 变成"离用户最近的计算层"**;⑤ **完全没提语义缓存/生成式 AI 缓存**——而 **GPTCache、Redis 语义缓存是 2026 LLM 应用的省钱关键**;⑥ **缓存一致性只讲 Cache-Aside**——而 **延迟双删、CAN 原则、CDC 同步**才是生产级答案。本章把 2026 硬核料全补上。

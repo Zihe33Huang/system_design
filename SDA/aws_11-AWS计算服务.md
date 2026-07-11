@@ -1,5 +1,9 @@
 # Book 3 · Chapter 11: AWS 计算服务 (AWS Compute Services)
 
+> 📑 **导航**:[← AWS存储](aws_10-AWS存储服务.md) · [📚 总目录](../README.md) · [AWS消息/IAM →](aws_12-AWS消息编排监控IAM.md)
+> 🔗 **相关**:[容器/K8s](aws_07-容器化编排与部署.md) · [扩展入门](../SDE-Vol1/ch1_01-从零扩展到百万用户.md) · [AWS大数据/ML](aws_13-AWS大数据与机器学习.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》Part II(云服务落地篇)的"计算"章**——它回答一个最朴素的问题:**"我把程序写完了,怎么让它跑起来给全世界用?"** Part I 讲了通信/存储/容器的原理,本章告诉你 **AWS 提供了哪些"算力的出租方式"**。一句话:**之前你在自己电脑上跑程序,本章告诉你 AWS 把"算力"做成三种产品让你按需租——EC2(整台虚拟机)、Lambda(只跑一个函数)、容器(ECS/EKS/Fargate)**。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)用 **"图片转卡通(image-to-cartoon)"** 这个贯穿案例把 EC2/Lambda/容器三大计算平台串起来,讲得相当清晰,是面试"AWS 上怎么跑应用"的标准参考。但**几处停在 2022**:① **EC2 还在并列讲 Xen 和 Nitro**——而 2026 几乎全部 Nitro,Xen 只剩少数老机型;② **Graviton2 是主角**——而 2024 **Graviton4 已发布**,ARM 在云上全面胜利;③ **Lambda 冷启动还讲 SnapStart for Java 11**——而 2024 已扩展到 Python/.NET,且按 1ms 计费;④ **ECS/EKS 还在讲 EC2 模式为主**——而 2026 **Fargate 已是默认推荐**,Karpenter 取代 Cluster Autoscaler;⑤ **完全没提 App Runner(从源码直接跑)、Lambda 响应流、Inferentia2/Trainium2(AI 推理专用)、Nitro Enclaves(机密计算)**。本章把这些 2026 硬核料全补上,并为**非科班读者**加了一整节"基础概念铺垫"(服务器/虚拟化/容器/Serverless/弹性到底是个啥)。

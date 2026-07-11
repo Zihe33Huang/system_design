@@ -1,5 +1,9 @@
 # Book 3 · Chapter 2: 存储类型与关系型存储 (Storage Types and Relational Stores)
 
+> 📑 **导航**:[← 权衡原则](aws_01-系统设计权衡与原则.md) · [📚 总目录](../README.md) · [NoSQL →](aws_03-非关系型数据库.md)
+> 🔗 **相关**:[NoSQL](aws_03-非关系型数据库.md) · [AWS存储](aws_10-AWS存储服务.md) · [键值存储](../SDE-Vol1/ch1_06-设计键值存储.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》存储篇的开篇**——它把存储世界一刀切成两半:**底层存储格式(file / block / object)** + **上层关系型数据库(RDBMS)**。一句话:**关系库是"结构化数据 + ACID 事务 + SQL"的答案,但它是"单机友好、扩展困难"的怪兽**。本章把后续 Ch10 选 RDS/Aurora 的"为什么"讲透:**为什么要先理解存储格式?因为 RDS 跑在 EBS(block)上、Aurora 跑在分布式存储层上、Redshift 用对象存储(S3)做底**——存储选型决定了一切上限。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把**存储格式三件套、RDBMS 架构(查询处理器/执行引擎/存储引擎/缓冲池/事务管理器/恢复管理器)、ACID、隔离级别、规范化、B+ 树索引、分区/分片/复制、MySQL vs PostgreSQL**讲得相当系统,是面试"关系库概念题"的标准答案。但**几处停在 2022**:① **RDBMS 架构停在"单机"**——而 **2026 主流是存算分离(Aurora / Spanner / TiDB),"日志即数据库"**;② **隔离级别只列名词**——没讲**快照隔离(SI)+ MVCC** 是 PG/MySQL 的真实默认;③ **扩展停在"分片+读副本"**——而 **2026 是 NewSQL(TiDB/CockroachDB/YugabyteDB)+ Aurora Limitless/DSQL**;④ **完全没提向量索引 pgvector**(RAG/AI 时代刚需);⑤ **NVMe + 计算存储改写"磁盘慢"假设**(接 Ch1 延迟数字);⑥ **没提 HTAP**(TiFlash,事务+分析一体)。本章把 2026 硬核料全补上。

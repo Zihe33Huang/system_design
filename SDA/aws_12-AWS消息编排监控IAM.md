@@ -1,5 +1,9 @@
 # Book 3 · Chapter 12: AWS 消息、编排、监控与访问管理 (AWS Messaging, Orchestration, Monitoring, and Access Management Services)
 
+> 📑 **导航**:[← AWS计算](aws_11-AWS计算服务.md) · [📚 总目录](../README.md) · [AWS大数据/ML →](aws_13-AWS大数据与机器学习.md)
+> 🔗 **相关**:[架构模式](aws_08-架构设计与模式.md) · [消息队列](../SDE-Vol2/ch2_04-设计分布式消息队列.md) · [通知系统](../SDE-Vol1/ch1_10-设计通知系统.md) · [聊天](../SDE-Vol1/ch1_12-设计聊天系统.md)
+
+
 > **本章定位**:这是 **Part II(第 9-13 章)里最大的一章**(原书 65 页,覆盖四大类服务)。它把 **Part I(aws_08 架构设计与模式)** 里讲的 **Pub-Sub / CDC / EDA / Saga / Outbox 模式原理** 全部**落地到 AWS 云上**——告诉你"AWS 用什么服务把这些模式实现出来"。四大类是:**① 消息与流**(SQS / SNS / Kinesis / MSK)、**② 编排与工作流**(Step Functions / MWAA / AppSync)、**③ 监控与可观测**(CloudWatch / EventBridge)、**④ 访问管理**(IAM / Cognito)。一句话:**aws_08 讲"模式为什么这样设计",本章讲"AWS 怎么帮你落地这些模式"**。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把这四大类一口气讲完,信息量很大,配 Cafe Delhi Heights 餐厅案例做串联,是面试"AWS 解耦/异步/事件驱动"题的标准参考。但**几处停在 2022**:① **CloudWatch Events 还在并列讲**——而 **2026 EventBridge 已是主角**(CW Events 是它的子集,控制台会自动跳转);② **MSK 还在讲 ZooKeeper**——而 **2024+ MSK 全面铺开 KRaft 模式(去 ZooKeeper)+ MSK Serverless 已成熟**;③ **Step Functions 只讲 Standard**——而 **2022+ Express Workflow 成流处理标配、2022+ Distributed Map 支持百万级并行**;④ **IAM 还在讲"长期 access key"**——而 **2026 已不推荐长期密钥,主推 IAM Role + STS 临时凭证(零长期凭证)**;⑤ **Cognito 只讲基础认证**——而 **2024+ Amazon Verified Permissions(ABAC/RBAC 现代授权)+ 高级安全特性**;⑥ **可观测性停在 CloudWatch 一家**——而 **2026 是 OpenTelemetry + ADOT(AWS Distro)+ X-Ray + CloudWatch RUM 现代栈**。本章把这些 2026 硬核料全补上,并为**非科班读者**加了一整节"基础概念铺垫"(同步/异步、队列/广播/流、编排/协同、监控三件套、authN/authZ 到底是什么)。

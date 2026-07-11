@@ -1,5 +1,9 @@
 # Chapter 14: 设计 YouTube (Design a YouTube / Video Sharing Platform)
 
+> 📑 **导航**:[← 搜索补全](ch1_13-设计搜索自动补全.md) · [📚 总目录](../README.md) · [Drive →](ch1_15-设计GoogleDrive.md)
+> 🔗 **相关**:[对象存储](../SDE-Vol2/ch2_09-设计对象存储.md) · [Drive](ch1_15-设计GoogleDrive.md) · [AWS网络](../SDA/aws_09-AWS网络服务.md) · [AWS存储](../SDA/aws_10-AWS存储服务.md) · [AWS计算](../SDA/aws_11-AWS计算服务.md)
+
+
 > *"YouTube looks simple: content creators upload videos and viewers click play. Is it really that simple? Not really."* — 原书开篇
 >
 > **本章定位**:YouTube 是**"带宽密集 + 转码密集 + CDN 为王"**的题——它是视频流媒体的标杆,也是"**客户端 → CDN → 转码农场**"这条工业流水线的最佳教学。它把 Ch1 的 CDN/对象存储/MQ、Ch4 的限流、Ch13 的搜索召回全用上。灵魂是五件事:**① 视频怎么上传快(分块 + 断点续传)② 视频怎么转码(编码阶梯 + DAG 调度)③ 视频怎么流畅播放(自适应码率 HLS/DASH)④ 视频怎么分发得便宜(CDN + 长尾优化)⑤ 直播和短视频(2026 必问)**。

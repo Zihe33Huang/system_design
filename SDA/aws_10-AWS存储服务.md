@@ -1,5 +1,9 @@
 # Book 3 · Chapter 10: AWS 存储服务 (AWS Storage Services)
 
+> 📑 **导航**:[← AWS网络](aws_09-AWS网络服务.md) · [📚 总目录](../README.md) · [AWS计算 →](aws_11-AWS计算服务.md)
+> 🔗 **相关**:[存储&关系库](aws_02-存储类型与关系型数据库.md) · [NoSQL](aws_03-非关系型数据库.md) · [键值存储](../SDE-Vol1/ch1_06-设计键值存储.md) · [对象存储](../SDE-Vol2/ch2_09-设计对象存储.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》Part II(云服务落地篇)的第一章"存储"**——它把 Part I(Ch2/Ch3)讲的**抽象存储概念(块/文件/对象 + 关系/NoSQL)**落到 **AWS 云上的具体托管服务**。一句话:**之前你学了"存储世界有哪些类型",本章告诉你"AWS 把每一类做成了什么产品、怎么选、怎么用"**。两大核心是 **Amazon S3(对象存储之王)** 和 **Amazon DynamoDB(云原生 KV/文档库)**,其余服务围绕它们成体系。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把 **EBS/EFS/S3 三件套 + RDS/Aurora/DynamoDB/DocumentDB/Neptune/ElastiCache/OpenSearch/Timestream/Keyspaces** 一口气过一遍,配 Cafe Delhi Heights 餐厅案例做选型串联,是面试"AWS 存储选型题"的标准参考。但**几处停在 2022**:① **Aurora 只讲 v1,Serverless 还是 ACU 概念**——而 **2026 是 Aurora Serverless v2(真按容量伸缩)+ Aurora Limitless(分布式分片)+ Aurora DSQL(serverless PostgreSQL)**;② **DynamoDB Global Tables 只讲最终一致**——而 **2022 后支持强一致读、2024 增强多 Region 强一致**;③ **S3 存储类停在 Glacier Flexible/Deep Archive**——而 **2023 推出 S3 Express One Zone(单 AZ 毫秒级低延迟,云上最快的对象存储)**;④ **完全没提 S3 + 向量检索**(AI/RAG 时代刚需,OpenSearch 向量库 / pgvector / Bedrock Knowledge Base);⑤ **EBS gp2 还在讲**——而 **gp3 已是默认,io2 Block Express 64TB/256K IOPS**;⑥ **ElastiCache for Redis 还在叫"Redis"**——而 **2024 Redis 改协议后 AWS 主推开源分叉 Valkey**;⑦ **S3 Tables(2024,把 Iceberg 表直接放 S3)完全没讲**。本章把 2026 硬核料全补上。

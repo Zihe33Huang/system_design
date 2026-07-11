@@ -1,5 +1,9 @@
 # Book 3 · Chapter 8: 架构设计与模式 (Architectural Designs and Patterns)
 
+> 📑 **导航**:[← 容器/K8s](aws_07-容器化编排与部署.md) · [📚 总目录](../README.md) · [AWS网络 →](aws_09-AWS网络服务.md)
+> 🔗 **相关**:[AWS消息/IAM](aws_12-AWS消息编排监控IAM.md) · [消息队列](../SDE-Vol2/ch2_04-设计分布式消息队列.md) · [酒店预订](../SDE-Vol2/ch2_07-设计酒店预订系统.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》Part I 的收尾章**——它把 Ch1–7 讲的零散概念(权衡/存储/缓存/负载均衡/网络/容器)组织成**可复用的"架构模式"**。如果说 Ch1–7 是"积木",那本章是**"用积木搭房子的图纸"**。一句话:**模式 = 被验证过的、有名字的、可复用的架构解决方案**。本章是 Part I 里**信息密度最高、面试最常考、SDE 几乎没覆盖净增量**的一章——CDC、Pub-Sub、编排 vs 协同、Lambda/Kappa、CQRS、Saga、熔断器、Outbox、事件溯源全是高频考点。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把这章写得**又全又密**——CDC(4 种实现)、Pub-Sub(消息代理/队列/AMQP)、编排 vs 协同(4 种编排变体)、Lambda/Kappa/Data Lake、单体/N 层/微服务演进、EDA(状态机/事件溯源)、CQRS/Saga/熔断/重试/限流/DDD/API 路由/Sidecar/BFF/Strangler/Outbox、HDFS vs Kafka——是面试"架构模式"题的标准答案。但**几个关键点停在 2022**:① **Saga 只给了定义**——没讲 **Temporal/Cadence 工作流引擎**(2026 编排派主流),也没对比 **TCC**;② **Outbox 只一句**——而它是 **EDA 落地的最大拦路虎**(写 DB + 发事件的原子性),原书没讲透;③ **熔断器没提工具**——而 **Hystrix 2018 停更,2026 用 Resilience4j**;④ **CQRS 和事件溯源分开讲**——没讲它俩**怎么组合**(金融/订单系统的标配);⑤ **Data Lake 没提 Data Mesh**——2026 数据架构最热的"领域驱动数据所有权";⑥ **Kafka 还带 ZooKeeper**——而 **KRaft 去 ZooKeeper、Tiered Storage** 已是 2026 主流;⑦ **Kappa 没提 Flink**——Flink 是 Kappa 的事实执行引擎;⑧ **微服务讲成"必然演进"**——而 2026 在反思:**模块化单体回潮**。本章把这些 2026 硬核料全补上,并和 **SDE-Vol2 Ch6 广告聚合(Lambda/Kappa)、Ch11 支付(Saga/TCC)、Ch4 消息队列(Kafka)** 做交叉引用。

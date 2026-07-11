@@ -1,5 +1,9 @@
 # Book 3 · Chapter 6: 通信网络与协议 (Communication Networks and Protocols)
 
+> 📑 **导航**:[← 负载均衡](aws_05-负载均衡.md) · [📚 总目录](../README.md) · [容器/K8s →](aws_07-容器化编排与部署.md)
+> 🔗 **相关**:[AWS网络](aws_09-AWS网络服务.md) · [聊天](../SDE-Vol1/ch1_12-设计聊天系统.md)
+
+
 > **本章定位**:这是 **《System Design on AWS》第 6 章**——讲**机器之间到底怎么"说话"**。如果说 Ch1 是"设计前的权衡",Ch5 是"流量分发到哪台机器",那 Ch6 回答的是更底层的两个问题:**① 机器之间用什么协议交换数据(OSI/TCP/IP 分层、TCP vs UDP、HTTP/SMTP/XMPP/MQTT)?② 用什么通信模式(Pull 轮询 / Push 推送 / RPC / REST / GraphQL / WebRTC)?** 一句话:**协议 = 机器之间约定的"语法 + 语义 + 时序",通信模型 = 谁主动、谁等待、数据怎么编码**。它是 Ch5 L4/L7 分类的理论基础(L4=传输层、L7=应用层都来自本章 OSI 模型),也是后续 Ch7 容器网络、Ch9 AWS 网络、Ch19 聊天系统的地基。
 
 > **本章和原书的区别**:原书(2023 O'Reilly)把**OSI 七层、TCP/IP 四层、TCP 三次握手/拥塞控制、UDP、HTTP/1.1-2-3、SMTP/POP/IMAP、XMPP、MQTT、轮询/长轮询/WebSocket/SSE、RPC/REST/GraphQL、WebRTC**讲得相当系统——是面试"网络协议"题的标准答案骨架。但**几处停在 2022**:① **HTTP/3 + QUIC 只点了一句"用 UDP"**——而 2022 年正式标准化后,**QUIC 的 0-RTT / 连接迁移 / 多路复用无队头阻塞**已是传输层最大变革,2026 已是主流(Google/Cloudflare/Apple 全用),原书漏透了细节;② **gRPC vs REST vs GraphQL 没给选型矩阵**——而 2026 内部微服务默认 gRPC(Protobuf 二进制 + 双向流)、灵活客户端用 GraphQL、全栈 TS 用 tRPC,这是面试高频;③ **SSE 被严重低估**(原书只把它当"备选")——而 2026 **AI 流式输出(ChatGPT 那种逐字返回)、股票行情、通知推送首选 SSE**(自动重连 + 简单),WebSocket 只在需要双向时才用;④ **完全没提 mTLS / 零信任 / Service Mesh 加密**——而 2026 服务间通信默认加密(接 Ch5 Sidecar);⑤ **没提 AsyncAPI**(事件驱动的 OpenAPI);⑥ **没讲 IPv6 普及、DNS-over-HTTPS(DoH)/DNSSEC**;⑦ **WebRTC 只讲 P2P,没讲 SFU/MCU**——而大群视频(Discord/Zoom)用 SFU 不是纯 P2P。本章把这些 2026 硬核料全补上,并把原书的协议清单整理成"选型决策树"。

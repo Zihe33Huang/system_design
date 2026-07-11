@@ -1,5 +1,9 @@
 # Chapter 15: 设计 Google Drive (Design Google Drive / Cloud File Storage)
 
+> 📑 **导航**:[← YouTube](ch1_14-设计YouTube.md) · [📚 总目录](../README.md) · [持续学习 →](ch1_16-持续学习.md)
+> 🔗 **相关**:[对象存储](../SDE-Vol2/ch2_09-设计对象存储.md) · [YouTube](ch1_14-设计YouTube.md) · [AWS存储](../SDA/aws_10-AWS存储服务.md)
+
+
 > **本章定位**:Google Drive 是**"块级存储 + 多端同步 + 版本历史 + 协作冲突"**的题——它是 Dropbox / OneDrive / iCloud Drive 的核心,也是系统设计面试里**"文件型系统"的代表题**(与 Ch14 YouTube 的"视频流"对称)。它把 Ch1 的渐进扩展、Ch6 的 LSM/版本、Ch12 的多端同步状态、Ch13 的增量计算全串起来。灵魂是四件事:**① 怎么把文件拆块高效存取(block service + 去重)② 怏速上传/下载大文件(断点续传 / S3 multipart ⭐)③ 多端怎么保持一致(notification service + 同步流程)④ 协作冲突怎么解决(版本号 vs OT vs CRDT ⭐⭐)**。
 
 > **本章和原书的区别**:原书是这道题的**标准答案骨架**——"单机 → 加 LB/S3/分片 → block service 分块 + delta sync + 去重 + 冲突用'先到先得 + 版本号'"讲得清晰。但**完全没讲 Google Docs 的实时协作**(只一句"out of scope"),而这恰恰是 2026 大厂高频追问(**OT vs CRDT 是分水岭题**);**S3 只说"用了",没讲 multipart upload 的 ETag/part size/断点续传机制**;**去重只说"哈希相同就跳过",没讲内容寻址存储(content-addressable storage)和块级 vs 文件级去重**;**加密只说"加密了",没讲 at-rest / in-transit / 客户端 E2E 零知识三种模式的权衡**;**版本只说"存 file_version 表",没讲 copy-on-write / delta 增量 / 快照**;**冲突解决只给"先到先得",没讲这是 LWW 的退化、以及为什么 Google Docs 不能这么干**。本章把这十个增量全补上。

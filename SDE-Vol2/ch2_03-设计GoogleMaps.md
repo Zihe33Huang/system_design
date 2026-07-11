@@ -1,5 +1,9 @@
 # Volume 2 · Chapter 3: 设计 Google Maps (Design Google Maps)
 
+> 📑 **导航**:[← 附近好友](ch2_02-设计附近的好友.md) · [📚 总目录](../README.md) · [消息队列 →](ch2_04-设计分布式消息队列.md)
+> 🔗 **相关**:[邻近服务](ch2_01-设计邻近服务.md) · [附近好友](ch2_02-设计附近的好友.md)
+
+
 > **本章定位**:Google Maps 是**"海量瓦片 + 图算法导航 + ML 预测 ETA"**的超大规模综合题——它是 Vol.2 里**最复杂、最综合**的一章,把前面所有知识用遍:**地图瓦片 tiling + CDN**(地图渲染)、**geohash**(瓦片/路由 tile 编址)、**图算法 A*/Dijkstra**(最短路径)、**ML/GNN**(ETA 预测)、**Cassandra + Kafka**(高写位置流)、**WebSocket**(自适应重路由推送)。三大子系统各有灵魂:**① 地图渲染(预生成瓦片 + CDN + 向量瓦片)② 导航(分层 routing tile + A* + ML ETA + ranker)③ 位置服务(批处理上报 + 流式消费)**。它是地理服务题的天花板——从 V2-Ch1 的"附近商家(直线距离)"升级到"真实路网(最短路径 + 实时交通)"。
 
 > **本章和原书的区别**:原书把**三大子系统和 routing tile 机制讲得相当完整**——分层 routing tile、A* 在 tile 上按需 hydrate、自适应 ETA 的 super-tile 优化、向量瓦片优化都覆盖了,是面试标准答案。但**最短路径只提 Dijkstra/A***,没讲 2026 生产真正用的 **Contraction Hierarchies(CH)和 Customizable Route Planning(CRP)**(Google/HERE 实际方案,毫秒级跨大陆寻路);**ML ETA 只说"用 ML",没讲 Google+DeepMind 的 **GNN(图神经网络)** 具体做法;**向量瓦片(WebGL/Mapbox GL/MVT)** 只作"优化"提一句,实际是 2026 主流(光栅瓦片已淘汰);**离线地图/AR 导航(Live View)/多模态**完全没提。本章把这些补上。
