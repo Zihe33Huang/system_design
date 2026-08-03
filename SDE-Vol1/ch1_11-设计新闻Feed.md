@@ -168,6 +168,144 @@ flowchart LR
 
 ---
 
+# 【🌹自己笔记】怎么知道谁是明星要去主动拉去的？ （明星没push)
+```
+只从关注流角度，明星不做Push、需要实时拉取的判断逻辑，核心是：**先从用户关注列表里，筛选出被全局标记为“明星/大V”的账号，再做限流裁剪，最终确定要拉取的目标**。下面是完整、可落地的判断流程与高性能实现。
+
+---
+
+### 一、核心判断逻辑（关注流视角）
+#### 1. 判定标准：什么是“不Push、要拉取”的明星
+- 规则：**粉丝数≥阈值（如50万/100万）**，或被运营标记为**头部账号/明星**。
+- 标记：后台定时任务（如每小时）按粉丝数/运营配置，更新全局明星标记库。
+- 行为：这类账号**发布时不做全量Push**（不写入千万粉丝Timeline），仅保留自己的Outbox（发件箱）。
+
+#### 2. 关注流里的筛选流程（用户刷Feed时）
+1. **取当前用户的关注列表**（`follow_uids`）。
+2. **在关注列表内，过滤出明星账号**（只看我关注的人里哪些是明星）。
+3. **限流裁剪**（防止拉取过多）：
+   - 最多取N个明星（如6个）。
+   - 每个明星最多取M条最新内容（如12条）。
+   - 只拉近X小时（如1–3小时）新发内容。
+4. **对筛选出的明星，实时拉取Outbox**，合并到预推的Timeline里。
+
+---
+
+### 二、高性能实现方案（线上标准）
+#### 方案1：Redis Hash 单点O(1)查询（主流）
+- 存储：`user:meta:{uid}` → `level`（0=普通，1=达人，2=明星）。
+- 逻辑：对关注列表里的每个UID，批量查`level`，只保留`level=2`的账号。
+
+```python
+def get_follow_stars(uid, follow_uids, max_stars=6):
+    # 批量管道查询，1次网络IO
+    pipe = redis.pipeline()
+    for f_uid in follow_uids:
+        pipe.hget(f"user:meta:{f_uid}", "level")
+    levels = pipe.execute()
+    
+    # 筛选明星 + 限流
+    star_uids = [
+        follow_uids[i] 
+        for i, lv in enumerate(levels) 
+        if lv == "2"
+    ]
+    return star_uids[:max_stars]
+```
+
+#### 方案2：Redis Set + SISMEMBER（全局明星白名单）
+- 存储：`global:star_set`（所有明星UID的Set）。
+- 逻辑：对关注列表里的每个UID，用`SISMEMBER`远程判断是否在明星Set里（O(1)）。
+
+```python
+def get_follow_stars(uid, follow_uids, max_stars=6):
+    pipe = redis.pipeline()
+    for f_uid in follow_uids:
+        pipe.sismember("global:star_set", f_uid)
+    is_star_list = pipe.execute()
+    
+    star_uids = [
+        follow_uids[i] 
+        for i, is_star in enumerate(is_star_list) 
+        if is_star
+    ]
+    return star_uids[:max_stars]
+```
+
+#### 方案3：关注列表预存明星标记（极致性能）
+- 存储：用户关注列表分两个Set：
+  - `follow:normal:{uid}`：普通关注者（已Push）
+  - `follow:star:{uid}`：关注的明星（需拉取）。
+- 逻辑：刷Feed时，直接取`follow:star:{uid}`，无需再过滤。
+
+```python
+def get_follow_stars(uid, max_stars=6):
+    # 直接取预存的关注明星列表，O(1)
+    star_uids = redis.smembers(f"follow:star:{uid}")
+    return list(star_uids)[:max_stars]
+```
+
+---
+
+### 三、完整伪代码（关注流+明星拉取）
+```python
+# 配置
+STAR_LEVEL = 2          # 明星等级
+MAX_STARS = 6           # 单次最多拉6个明星
+MAX_POSTS_PER_STAR = 12 # 每个明星最多12条
+TIME_WINDOW_HOURS = 3   # 只拉3小时内内容
+
+def get_hybrid_feed(uid, page=1, size=20):
+    # 1. 读预推Timeline（普通关注者已Push）
+    timeline_ids = redis.lrange(f"timeline:{uid}", 0, size * 2)
+    
+    # 2. 筛选关注列表里的明星（高性能方案）
+    follow_uids = redis.smembers(f"follow:{uid}")
+    star_uids = get_follow_stars(uid, follow_uids, MAX_STARS)
+    
+    # 3. 实时拉取明星Outbox（只拉最新+时间窗口内）
+    star_post_ids = []
+    now = time.time()
+    time_window = now - 3600 * TIME_WINDOW_HOURS
+    
+    for star_uid in star_uids:
+        # 从明星Outbox取最新N条（ZSet按时间戳排序）
+        posts = redis.zrangebyscore(
+            f"outbox:{star_uid}",
+            min=time_window,
+            max="+inf",
+            start=0,
+            num=MAX_POSTS_PER_STAR,
+            withscores=False
+        )
+        star_post_ids.extend(posts)
+    
+    # 4. 合并+去重+排序+分页
+    all_ids = merge_dedup_sort(timeline_ids, star_post_ids)
+    page_ids = slice_page(all_ids, page, size)
+    
+    # 5. 批量补全内容
+    return batch_get_posts(page_ids)
+```
+
+---
+
+### 四、关键工程约束（必加）
+1. **数量限流**：单次最多拉6个明星，每个最多12条，避免雪崩。
+2. **时间窗口**：只拉近3小时内容，保证时效性、减少IO。
+3. **增量拉取**：记录上次拉取时间戳，下次只拉增量，避免重复拉取。
+4. **缓存兜底**：明星Outbox加短TTL缓存（如1分钟），降低DB压力。
+
+---
+
+### 五、为什么这么设计（明星不Push）
+- **写入成本**：明星粉丝千万级，Push会触发千万次写，成本爆炸。
+- **读成本可控**：只有用户刷Feed时才拉取，流量按需分摊。
+- **普通用户体验**：普通关注者预推，读O(1)，速度快。
+
+需要我把以上逻辑整理成可直接对接现有Feed服务的**接口伪代码+Redis Key规范**吗？
+```
+
 ## 4. 核心抉择:Push vs Pull vs Hybrid ⭐⭐⭐⭐⭐
 
 这是本章灵魂。**fanout 发生在写时(push)还是读时(pull)?**
