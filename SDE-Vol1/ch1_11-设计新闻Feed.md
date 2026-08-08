@@ -436,8 +436,8 @@ flowchart LR
     style C fill:#CE93D8,stroke:#7B1FA2,color:#1f1f1f
 ```
 
-- **时序**:关注流默认,Redis sorted set score=timestamp,O(log N) 插入。
-- **互动分**:早期 Facebook EdgeRank(`score = 亲和度 × 权重 × 时间衰减`)。简单可解释。
+- **时序(chronological)**:关注流默认,Redis sorted set score=timestamp,O(log N) 插入。
+- **互动分（score)**:早期 Facebook EdgeRank(`score = 亲和度 × 权重 × 时间衰减`)。简单可解释。
 - **ML 精排(2026 主流)**:见下节推荐流。
 
 ---
